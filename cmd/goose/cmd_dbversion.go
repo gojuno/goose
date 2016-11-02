@@ -1,9 +1,10 @@
 package main
 
 import (
-	"bitbucket.org/liamstask/goose/lib/goose"
 	"fmt"
 	"log"
+
+	"github.com/gojuno/goose/lib/goose"
 )
 
 var dbVersionCmd = &Command{
