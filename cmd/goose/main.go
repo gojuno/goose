@@ -1,12 +1,13 @@
 package main
 
 import (
-	"bitbucket.org/liamstask/goose/lib/goose"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
 	"text/template"
+
+	"github.com/gojuno/goose/lib/goose"
 )
 
 // global options. available to any subcommands.
