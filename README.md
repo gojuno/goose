@@ -1,6 +1,10 @@
 This is a fork of https://bitbucket.org/liamstask/goose/src with SQLite support removed in order 
 to speedup builds and tests with direct or transitive dependencies on Goose
 
+Added new goose commands:
+ 1. create_db [soft]
+ 2. drop_db [soft]
+
 # goose
 
 goose is a database migration tool.

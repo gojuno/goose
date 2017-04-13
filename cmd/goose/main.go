@@ -20,15 +20,6 @@ func dbConfFromFlags() (dbconf *goose.DBConf, err error) {
 	return goose.NewDBConf(*flagPath, *flagEnv, *flagPgSchema)
 }
 
-var commands = []*Command{
-	upCmd,
-	downCmd,
-	redoCmd,
-	statusCmd,
-	createCmd,
-	dbVersionCmd,
-}
-
 func main() {
 
 	flag.Usage = usage
