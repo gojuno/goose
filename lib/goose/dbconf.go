@@ -73,6 +73,7 @@ func NewDBConf(p, env string, pgschema string) (*DBConf, error) {
 				lastIdx := strings.Index(open[startIdx:], " ")
 				if lastIdx != -1 {
 					openNoDB = open[:startIdx] + open[startIdx+lastIdx:]
+					openNoDB += " dbname=postgres"
 				}
 			}
 		}

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	"bitbucket.org/liamstask/goose/lib/goose"
+	"github.com/gojuno/goose/lib/goose"
 )
 
 var dropDatabaseCmd = &Command{

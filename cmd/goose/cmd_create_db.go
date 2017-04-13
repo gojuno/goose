@@ -3,11 +3,11 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 
-	"bitbucket.org/liamstask/goose/lib/goose"
-	"database/sql"
+	"github.com/gojuno/goose/lib/goose"
 )
 
 var createDatabaseCmd = &Command{
@@ -50,7 +50,7 @@ func createDatabaseRun(cmd *Command, args ...string) {
 			}
 		}
 		if isExist == 0 {
-			if _, err := db.Exec(fmt.Sprintf("CREATE DATABASE %s WITH OWNER juno", conf.DBName)); err != nil {
+			if _, err := db.Exec(fmt.Sprintf("CREATE DATABASE %s", conf.DBName)); err != nil {
 				log.Fatal(err)
 			}
 		}
