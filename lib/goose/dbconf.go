@@ -59,7 +59,7 @@ func NewDBConf(p, env string, pgschema string) (*DBConf, error) {
 	var dbName, openNoDB string
 	// Automatically parse postgres urls
 	switch drv {
-	case "postgres":
+	case "postgres", "pgx":
 		u, err := nurl.Parse(open)
 		if err == nil && u.Path != "" {
 			dbName = u.Path[1:]
