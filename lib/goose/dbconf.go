@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/stdlib"
 	"github.com/kylelemons/go-gypsy/yaml"
 	"github.com/lib/pq"
 )
@@ -125,6 +126,10 @@ func newDBDriver(name, open, openNoDB string) DBDriver {
 	switch name {
 	case "postgres":
 		d.Import = "github.com/lib/pq"
+		d.Dialect = &PostgresDialect{}
+
+	case "pgx":
+		d.Import = "github.com/jackc/pgx/stdlib"
 		d.Dialect = &PostgresDialect{}
 
 	case "mymysql":
