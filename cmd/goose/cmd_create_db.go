@@ -38,7 +38,7 @@ func createDatabaseRun(cmd *Command, args ...string) {
 
 	var isSoft = len(args) > 0 && args[0] == "soft"
 	switch conf.Driver.Name {
-	case "postgres":
+	case "postgres", "pgx":
 		isExist := 0
 		if isSoft {
 			if err := db.QueryRow(fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%s'", conf.DBName)).Scan(&isExist); err != nil {
