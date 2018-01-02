@@ -10,7 +10,10 @@ import (
 	"strings"
 )
 
-const sqlCmdPrefix = "-- +goose "
+const (
+	sqlCmdPrefix   = "-- +goose "
+	scannerBufSize = 4 * 1024 * 1024
+)
 
 // Checks the line to see if the line has a statement-ending semicolon
 // or if the line contains a double-dash comment.
@@ -18,6 +21,7 @@ func endsWithSemicolon(line string) bool {
 
 	prev := ""
 	scanner := bufio.NewScanner(strings.NewReader(line))
+	scanner.Buffer(make([]byte, scannerBufSize), scannerBufSize)
 	scanner.Split(bufio.ScanWords)
 
 	for scanner.Scan() {
@@ -43,6 +47,7 @@ func endsWithSemicolon(line string) bool {
 func getSQLStatements(r io.Reader, direction bool) (stmts []string, tx bool) {
 	var buf bytes.Buffer
 	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, scannerBufSize), scannerBufSize)
 
 	// track the count of each section
 	// so we can diagnose scripts with no annotations

@@ -3,21 +3,23 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"io/ioutil"
 	"log"
 	"os"
 
-	"github.com/pressly/goose"
+	"github.com/gojuno/goose"
+	yaml "gopkg.in/yaml.v2"
 
 	// Init DB drivers.
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
 	_ "github.com/ziutek/mymysql/godrv"
 )
 
 var (
 	flags = flag.NewFlagSet("goose", flag.ExitOnError)
-	dir   = flags.String("dir", ".", "directory with migration files")
+	dir   = flags.String("dir", "db/migrations", "directory with migration files")
+	conf  = flags.String("conf", "etc/config.yaml", "configuration file")
 )
 
 func main() {
@@ -33,7 +35,7 @@ func main() {
 		return
 	}
 
-	if len(args) < 3 {
+	if len(args) < 1 {
 		flags.Usage()
 		return
 	}
@@ -43,38 +45,80 @@ func main() {
 		return
 	}
 
-	driver, dbstring, command := args[0], args[1], args[2]
+	command := args[0]
+
+	driver, dbstring, err := readConfig(*conf)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if err := goose.SetDialect(driver); err != nil {
 		log.Fatal(err)
 	}
 
+	goose.GetDialect()
+
 	switch driver {
-	case "redshift":
+	case "redshift", "pgx":
 		driver = "postgres"
-	case  "tidb":
+	case "tidb":
 		driver = "mysql"
 	}
 
-	switch dbstring {
-	case "":
+	if dbstring == "" {
 		log.Fatalf("-dbstring=%q not supported\n", dbstring)
+	}
+
+	switch command {
+	case "create_db":
+		if err := goose.CreateDB(dbstring); err != nil {
+			log.Fatalf("goose run: %v", err)
+		}
+	case "drop_db":
+		if err := goose.DropDB(dbstring); err != nil {
+			log.Fatalf("goose run: %v", err)
+		}
 	default:
-	}
+		db, err := sql.Open(driver, dbstring)
+		if err != nil {
+			log.Fatalf("-dbstring=%q: %v\n", dbstring, err)
+		}
 
-	db, err := sql.Open(driver, dbstring)
+		arguments := []string{}
+		if len(args) > 3 {
+			arguments = append(arguments, args[3:]...)
+		}
+
+		if err := goose.Run(command, db, *dir, arguments...); err != nil {
+			log.Fatalf("goose run: %v", err)
+		}
+	}
+}
+
+// extract configuration details from the given file
+func readConfig(filename string) (driver, connstring string, err error) {
+	f, err := os.Open(filename)
 	if err != nil {
-		log.Fatalf("-dbstring=%q: %v\n", dbstring, err)
+		return "", "", err
 	}
 
-	arguments := []string{}
-	if len(args) > 3 {
-		arguments = append(arguments, args[3:]...)
+	b, err := ioutil.ReadAll(f)
+	if err != nil {
+		return "", "", err
 	}
 
-	if err := goose.Run(command, db, *dir, arguments...); err != nil {
-		log.Fatalf("goose run: %v", err)
+	conf := struct {
+		DBX struct {
+			Driver     string `yaml:"Driver"`
+			Connstring string `yaml:"Connstring"`
+		} `yaml:"DBX"`
+	}{}
+
+	if err := yaml.Unmarshal(b, &conf); err != nil {
+		return "", "", err
 	}
+
+	return os.ExpandEnv(conf.DBX.Driver), os.ExpandEnv(conf.DBX.Connstring), nil
 }
 
 func usage() {
@@ -84,25 +128,16 @@ func usage() {
 }
 
 var (
-	usagePrefix = `Usage: goose [OPTIONS] DRIVER DBSTRING COMMAND
+	usagePrefix = `Usage: goose [OPTIONS] COMMAND
 
-Drivers:
+Supported drivers:
     postgres
+    pgx
     mysql
-    sqlite3
     redshift
 
 Examples:
-    goose sqlite3 ./foo.db status
-    goose sqlite3 ./foo.db create init sql
-    goose sqlite3 ./foo.db create add_some_column sql
-    goose sqlite3 ./foo.db create fetch_user_data go
-    goose sqlite3 ./foo.db up
-
-    goose postgres "user=postgres dbname=postgres sslmode=disable" status
-    goose mysql "user:password@/dbname?parseTime=true" status
-    goose redshift "postgres://user:password@qwerty.us-east-1.redshift.amazonaws.com:5439/db" status
-    goose tidb "user:password@/dbname?parseTime=true" status
+    goose status
 
 Options:
 `
@@ -118,5 +153,7 @@ Commands:
     status               Dump the migration status for the current DB
     version              Print the current version of the database
     create NAME [sql|go] Creates new migration file with next version
+    create_db            Creates database
+    drop_db              Drops database
 `
 )
