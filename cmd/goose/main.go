@@ -1,70 +1,159 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
-	"fmt"
+	"io/ioutil"
+	"log"
 	"os"
-	"strings"
-	"text/template"
 
-	"github.com/gojuno/goose/lib/goose"
+	"github.com/gojuno/goose"
+	yaml "gopkg.in/yaml.v2"
+
+	// Init DB drivers.
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
+	_ "github.com/ziutek/mymysql/godrv"
 )
 
-// global options. available to any subcommands.
-var flagPath = flag.String("path", "db", "folder containing db info")
-var flagEnv = flag.String("env", "development", "which DB environment to use")
-var flagPgSchema = flag.String("pgschema", "", "which postgres-schema to migrate (default = none)")
-
-// helper to create a DBConf from the given flags
-func dbConfFromFlags() (dbconf *goose.DBConf, err error) {
-	return goose.NewDBConf(*flagPath, *flagEnv, *flagPgSchema)
-}
+var (
+	flags = flag.NewFlagSet("goose", flag.ExitOnError)
+	dir   = flags.String("dir", "db/migrations", "directory with migration files")
+	conf  = flags.String("conf", "etc/config.yaml", "configuration file")
+)
 
 func main() {
+	flags.Usage = usage
+	flags.Parse(os.Args[1:])
 
-	flag.Usage = usage
-	flag.Parse()
+	args := flags.Args()
 
-	args := flag.Args()
-	if len(args) == 0 || args[0] == "-h" {
-		flag.Usage()
+	if len(args) > 1 && args[0] == "create" {
+		if err := goose.Run("create", nil, *dir, args[1:]...); err != nil {
+			log.Fatalf("goose run: %v", err)
+		}
 		return
 	}
 
-	var cmd *Command
-	name := args[0]
-	for _, c := range commands {
-		if strings.HasPrefix(c.Name, name) {
-			cmd = c
-			break
+	if len(args) < 1 {
+		flags.Usage()
+		return
+	}
+
+	if args[0] == "-h" || args[0] == "--help" {
+		flags.Usage()
+		return
+	}
+
+	command := args[0]
+
+	driver, dbstring, err := readConfig(*conf)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := goose.SetDialect(driver); err != nil {
+		log.Fatal(err)
+	}
+
+	goose.GetDialect()
+
+	switch driver {
+	case "redshift", "pgx":
+		driver = "postgres"
+	case "tidb":
+		driver = "mysql"
+	}
+
+	if dbstring == "" {
+		log.Fatalf("-dbstring=%q not supported\n", dbstring)
+	}
+
+	switch command {
+	case "create_db":
+		if err := goose.CreateDB(dbstring); err != nil {
+			log.Fatalf("goose run: %v", err)
+		}
+	case "drop_db":
+		if err := goose.DropDB(dbstring); err != nil {
+			log.Fatalf("goose run: %v", err)
+		}
+	default:
+		db, err := sql.Open(driver, dbstring)
+		if err != nil {
+			log.Fatalf("-dbstring=%q: %v\n", dbstring, err)
+		}
+
+		arguments := []string{}
+		if len(args) > 3 {
+			arguments = append(arguments, args[3:]...)
+		}
+
+		if err := goose.Run(command, db, *dir, arguments...); err != nil {
+			log.Fatalf("goose run: %v", err)
 		}
 	}
+}
 
-	if cmd == nil {
-		fmt.Printf("error: unknown command %q\n", name)
-		flag.Usage()
-		os.Exit(1)
+// extract configuration details from the given file
+func readConfig(filename string) (driver, connstring string, err error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return "", "", err
 	}
 
-	cmd.Exec(args[1:])
+	b, err := ioutil.ReadAll(f)
+	if err != nil {
+		return "", "", err
+	}
+
+	conf := struct {
+		DBX struct {
+			Driver     string `yaml:"Driver"`
+			Connstring string `yaml:"Connstring"`
+		} `yaml:"DBX"`
+	}{}
+
+	if err := yaml.Unmarshal(b, &conf); err != nil {
+		return "", "", err
+	}
+
+	return os.ExpandEnv(conf.DBX.Driver), os.ExpandEnv(conf.DBX.Connstring), nil
 }
 
 func usage() {
-	fmt.Print(usagePrefix)
-	flag.PrintDefaults()
-	usageTmpl.Execute(os.Stdout, commands)
+	log.Print(usagePrefix)
+	flags.PrintDefaults()
+	log.Print(usageCommands)
 }
 
-var usagePrefix = `
-goose is a database migration management system for Go projects.
+var (
+	usagePrefix = `Usage: goose [OPTIONS] COMMAND
 
-Usage:
-    goose [options] <subcommand> [subcommand options]
+Supported drivers:
+    postgres
+    pgx
+    mysql
+    redshift
+
+Examples:
+    goose status
 
 Options:
 `
-var usageTmpl = template.Must(template.New("usage").Parse(
-	`
-Commands:{{range .}}
-    {{.Name | printf "%-10s"}} {{.Summary}}{{end}}
-`))
+
+	usageCommands = `
+Commands:
+    up                   Migrate the DB to the most recent version available
+    up-to VERSION        Migrate the DB to a specific VERSION
+    down                 Roll back the version by 1
+    down-to VERSION      Roll back to a specific VERSION
+    redo                 Re-run the latest migration
+    reset                Roll back all migrations
+    status               Dump the migration status for the current DB
+    version              Print the current version of the database
+    create NAME [sql|go] Creates new migration file with next version
+    create_db            Creates database
+    drop_db              Drops database
+`
+)

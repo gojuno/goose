@@ -50,15 +50,12 @@ Apply all available migrations.
     $ OK    002_next.sql
     $ OK    003_and_again.go
 
-### option: pgschema
+## up-to
 
-Use the `pgschema` flag with the `up` command specify a postgres schema.
+Migrate up to a specific version.
 
-    $ goose -pgschema=my_schema_name up
-    $ goose: migrating db environment 'development', current version: 0, target: 3
-    $ OK    001_basics.sql
-    $ OK    002_next.sql
-    $ OK    003_and_again.go
+    $ goose up-to 20170506082420
+    $ OK    20170506082420_create_table.sql
 
 ## down
 
@@ -67,6 +64,13 @@ Roll back a single migration from the current version.
     $ goose down
     $ goose: migrating db environment 'development', current version: 3, target: 2
     $ OK    003_and_again.go
+
+## down-to
+
+Roll back migrations to a specific version.
+
+    $ goose down-to 20170506082527
+    $ OK    20170506082527_alter_column.sql
 
 ## redo
 
@@ -90,20 +94,18 @@ Print the status of all migrations:
     $   Sun Jan  6 11:25:03 2013 -- 002_next.sql
     $   Pending                  -- 003_and_again.go
 
-## dbversion
+Note: for MySQL [parseTime flag](https://github.com/go-sql-driver/mysql#parsetime) must be enabled.
+
+## version
 
 Print the current version of the database:
 
-    $ goose dbversion
-    $ goose: dbversion 002
-
-
-`goose -h` provides more detailed info on each command.
-
+    $ goose version
+    $ goose: version 002
 
 # Migrations
 
-goose supports migrations written in SQL or in Go - see the `goose create` command above for details on how to generate them.
+goose supports migrations written in SQL or in Go.
 
 ## SQL Migrations
 
@@ -123,6 +125,9 @@ DROP TABLE post;
 ```
 
 Notice the annotations in the comments. Any statements following `-- +goose Up` will be executed as part of a forward migration, and any statements following `-- +goose Down` will be executed as part of a rollback.
+
+By default, all migrations are run within a transaction. Some statements like `CREATE DATABASE`, however, cannot be run within a transaction. You may optionally add `-- +goose NO TRANSACTION` to the top of your migration 
+file in order to skip transactions within that specific migration file. Both Up and Down migrations within this file will be run without transactions.
 
 By default, SQL statements are delimited by semicolons - in fact, query statements must end with a semicolon to be properly recognized by goose.
 
@@ -156,116 +161,48 @@ language plpgsql;
 
 ## Go Migrations
 
-A sample Go migration looks like:
+1. Create your own goose binary, see [example](./examples/go-migrations)
+2. Import `github.com/pressly/goose`
+3. Register your migration functions
+4. Run goose command, ie. `goose.Up(db *sql.DB, dir string)`
+
+A [sample Go migration 00002_users_add_email.go file](./example/migrations-go/00002_rename_root.go) looks like:
 
 ```go
-package main
+package migrations
 
 import (
-    "database/sql"
-    "fmt"
+	"database/sql"
+
+	"github.com/pressly/goose"
 )
 
-func Up_20130106222315(txn *sql.Tx) {
-    fmt.Println("Hello from migration 20130106222315 Up!")
+func init() {
+	goose.AddMigration(Up, Down)
 }
 
-func Down_20130106222315(txn *sql.Tx) {
-    fmt.Println("Hello from migration 20130106222315 Down!")
+func Up(tx *sql.Tx) error {
+	_, err := tx.Exec("UPDATE users SET username='admin' WHERE username='root';")
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func Down(tx *sql.Tx) error {
+	_, err := tx.Exec("UPDATE users SET username='root' WHERE username='admin';")
+	if err != nil {
+		return err
+	}
+	return nil
 }
 ```
 
-`Up_20130106222315()` will be executed as part of a forward migration, and `Down_20130106222315()` will be executed as part of a rollback.
+## License
 
-The numeric portion of the function name (`20130106222315`) must be the leading portion of migration's filename, such as `20130106222315_descriptive_name.go`. `goose create` does this by default.
+Licensed under [MIT License](./LICENSE)
 
-A transaction is provided, rather than the DB instance directly, since goose also needs to record the schema version within the same transaction. Each migration should run as a single transaction to ensure DB integrity, so it's good practice anyway.
-
-
-# Configuration
-
-goose expects you to maintain a folder (typically called "db"), which contains the following:
-
-* a `dbconf.yml` file that describes the database configurations you'd like to use
-* a folder called "migrations" which contains `.sql` and/or `.go` scripts that implement your migrations
-
-You may use the `-path` option to specify an alternate location for the folder containing your config and migrations.
-
-A sample `dbconf.yml` looks like
-
-```yml
-development:
-    driver: postgres
-    open: user=liam dbname=tester sslmode=disable
-```
-
-Here, `development` specifies the name of the environment, and the `driver` and `open` elements are passed directly to database/sql to access the specified database.
-
-You may include as many environments as you like, and you can use the `-env` command line option to specify which one to use. goose defaults to using an environment called `development`.
-
-goose will expand environment variables in the `open` element. For an example, see the Heroku section below.
-
-## Other Drivers
-goose knows about some common SQL drivers, but it can still be used to run Go-based migrations with any driver supported by `database/sql`. An import path and known dialect are required.
-
-Currently, available dialects are: "postgres" and "mysql"
-
-To run Go-based migrations with another driver, specify its import path and dialect, as shown below.
-
-```yml
-customdriver:
-    driver: custom
-    open: custom open string
-    import: github.com/custom/driver
-    dialect: mysql
-```
-
-NOTE: Because migrations written in SQL are executed directly by the goose binary, only drivers compiled into goose may be used for these migrations.
-
-## Using goose with Heroku
-
-These instructions assume that you're using [Keith Rarick's Heroku Go buildpack](https://github.com/kr/heroku-buildpack-go). First, add a file to your project called (e.g.) `install_goose.go` to trigger building of the goose executable during deployment, with these contents:
-
-```go
-// use build constraints to work around http://code.google.com/p/go/issues/detail?id=4210
-// +build heroku
-
-// note: need at least one blank line after build constraint
-package main
-
-import _ "github.com/gojuno/goose/cmd/goose"
-```
-
-[Set up your Heroku database(s) as usual.](https://devcenter.heroku.com/articles/heroku-postgresql)
-
-Then make use of environment variable expansion in your `dbconf.yml`:
-
-```yml
-production:
-    driver: postgres
-    open: $DATABASE_URL
-```
-
-To run goose in production, use `heroku run`:
-
-    heroku run goose -env production up
-
-# Contributors
-
-Thank you!
-
-* Josh Bleecher Snyder (josharian)
-* Abigail Walthall (ghthor)
-* Daniel Heath (danielrheath)
-* Chris Baynes (chris_baynes)
-* Michael Gerow (gerow)
-* Vytautas Šaltenis (rtfb)
-* James Cooper (coopernurse)
-* Gyepi Sam (gyepisam)
-* Matt Sherman (clipperhouse)
-* runner_mei
-* John Luebs (jkl1337)
-* Luke Hutton (lukehutton)
-* Kevin Gorjan (kevingorjan)
-* Brendan Fosberry (Fozz)
-* Nate Guerin (gusennan)
+[GoDoc]: https://godoc.org/github.com/pressly/goose
+[GoDoc Widget]: https://godoc.org/github.com/pressly/goose?status.svg
+[Travis]: https://travis-ci.org/pressly/goose
+[Travis Widget]: https://travis-ci.org/pressly/goose.svg?branch=master
