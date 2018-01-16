@@ -41,7 +41,7 @@ func TestSemicolons(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		r := endsWithSemicolon(test.line)
+		r := endsWithSemicolon([]byte(test.line))
 		if r != test.result {
 			t.Errorf("incorrect semicolon. got %v, want %v", r, test.result)
 		}

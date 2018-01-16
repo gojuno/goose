@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 )
 
 const (
@@ -15,13 +16,21 @@ const (
 	scannerBufSize = 4 * 1024 * 1024
 )
 
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, scannerBufSize)
+	},
+}
+
 // Checks the line to see if the line has a statement-ending semicolon
 // or if the line contains a double-dash comment.
-func endsWithSemicolon(line string) bool {
-
+func endsWithSemicolon(line []byte) bool {
 	prev := ""
-	scanner := bufio.NewScanner(strings.NewReader(line))
-	scanner.Buffer(make([]byte, scannerBufSize), scannerBufSize)
+	scanner := bufio.NewScanner(bytes.NewReader(line))
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
+
+	scanner.Buffer(buf, cap(buf))
 	scanner.Split(bufio.ScanWords)
 
 	for scanner.Scan() {
@@ -46,8 +55,12 @@ func endsWithSemicolon(line string) bool {
 // tell us to ignore semicolons.
 func getSQLStatements(r io.Reader, direction bool) (stmts []string, tx bool) {
 	var buf bytes.Buffer
+
+	buff := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buff)
+
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, scannerBufSize), scannerBufSize)
+	scanner.Buffer(buff, cap(buff))
 
 	// track the count of each section
 	// so we can diagnose scripts with no annotations
@@ -60,13 +73,12 @@ func getSQLStatements(r io.Reader, direction bool) (stmts []string, tx bool) {
 	tx = true
 
 	for scanner.Scan() {
-
-		line := scanner.Text()
+		line := scanner.Bytes()
 
 		// handle any goose-specific commands
-		if strings.HasPrefix(line, sqlCmdPrefix) {
-			cmd := strings.TrimSpace(line[len(sqlCmdPrefix):])
-			switch cmd {
+		if bytes.HasPrefix(line, []byte(sqlCmdPrefix)) {
+			cmd := bytes.TrimSpace(line[len(sqlCmdPrefix):])
+			switch string(cmd) {
 			case "Up":
 				directionIsActive = (direction == true)
 				upSections++
@@ -100,7 +112,11 @@ func getSQLStatements(r io.Reader, direction bool) (stmts []string, tx bool) {
 			continue
 		}
 
-		if _, err := buf.WriteString(line + "\n"); err != nil {
+		if _, err := buf.Write(line); err != nil {
+			log.Fatalf("io err: %v", err)
+		}
+
+		if _, err := buf.WriteString("\n"); err != nil {
 			log.Fatalf("io err: %v", err)
 		}
 

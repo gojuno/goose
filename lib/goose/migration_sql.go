@@ -9,10 +9,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const sqlCmdPrefix = "-- +goose "
 const bufferSize = 4 * 1024 * 1024
+
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, bufferSize)
+	},
+}
 
 // Checks the line to see if the line has a statement-ending semicolon
 // or if the line contains a double-dash comment.
@@ -21,7 +28,9 @@ func endsWithSemicolon(line string) bool {
 	prev := ""
 	scanner := bufio.NewScanner(strings.NewReader(line))
 
-	buf := make([]byte, bufferSize)
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
+
 	scanner.Buffer(buf, bufferSize)
 	scanner.Split(bufio.ScanWords)
 
@@ -50,7 +59,9 @@ func splitSQLStatements(r io.Reader, direction bool) (stmts []string) {
 	var buf bytes.Buffer
 	scanner := bufio.NewScanner(r)
 
-	bbuf := make([]byte, bufferSize)
+	bbuf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(bbuf)
+
 	scanner.Buffer(bbuf, bufferSize)
 
 	// track the count of each section
