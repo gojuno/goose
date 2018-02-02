@@ -5,7 +5,7 @@ Added new goose commands:
  1. create_db [soft]
  2. drop_db [soft]
 
-# goose
+# goose [![GoDoc](https://godoc.org/github.com/gojuno/goose?status.svg)](http://godoc.org/github.com/gojuno/goose) [![Build Status](https://travis-ci.org/gojuno/goose.svg?branch=master)](https://travis-ci.org/gojuno/goose)
 
 goose is a database migration tool.
 
