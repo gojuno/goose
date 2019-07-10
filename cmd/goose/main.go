@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/gojuno/goose"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	// Init DB drivers.
 	_ "github.com/go-sql-driver/mysql"
@@ -17,9 +17,11 @@ import (
 )
 
 var (
-	flags = flag.NewFlagSet("goose", flag.ExitOnError)
-	dir   = flags.String("dir", "db/migrations", "directory with migration files")
-	conf  = flags.String("conf", "etc/config.yaml", "configuration file")
+	flags        = flag.NewFlagSet("goose", flag.ExitOnError)
+	dir          = flags.String("dir", "db/migrations", "directory with migration files")
+	conf         = flags.String("conf", "etc/config.yaml", "configuration file")
+	driverFlag   = flags.String("driver", "", "db driver")
+	dbstringFlag = flags.String("dbstring", "", "db conn string")
 )
 
 func main() {
@@ -45,11 +47,19 @@ func main() {
 		return
 	}
 
-	command := args[0]
+	command, args := args[0], args[1:]
 
-	driver, dbstring, err := readConfig(*conf)
-	if err != nil {
-		log.Fatal(err)
+	driver, dbstring := *driverFlag, *dbstringFlag
+	switch {
+	case driver != "" && dbstring != "":
+	case driver == "" && dbstring == "":
+		var err error
+		driver, dbstring, err = readConfig(*conf)
+		if err != nil {
+			log.Fatal(err)
+		}
+	default:
+		log.Fatal("-dbstring and -driver must be either both present or absent")
 	}
 
 	if err := goose.SetDialect(driver); err != nil {
@@ -84,12 +94,7 @@ func main() {
 			log.Fatalf("-dbstring=%q: %v\n", dbstring, err)
 		}
 
-		arguments := []string{}
-		if len(args) > 3 {
-			arguments = append(arguments, args[3:]...)
-		}
-
-		if err := goose.Run(command, db, *dir, arguments...); err != nil {
+		if err := goose.Run(command, db, *dir, args...); err != nil {
 			log.Fatalf("goose run: %v", err)
 		}
 	}
